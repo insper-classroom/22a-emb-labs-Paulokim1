@@ -149,6 +149,16 @@ int main(void) {
 	// aplicacoes embarcadas não devem sair do while(1).
 	while (1)
 	{
+		
+		if(!pio_get(BUT_PIO, PIO_INPUT, BUT_PIO_IDX_MASK)){
+			for(int i=0; i < 5; i++){
+				pio_set(LED_PIO, LED_PIO_IDX_MASK);      // Coloca 1 no pino LED
+				delay_ms(100);                        // Delay por software de 100 ms
+				pio_clear(LED_PIO, LED_PIO_IDX_MASK);    // Coloca 0 no pino do LED
+				delay_ms(100);                        // Delay por software de 100 ms
+			}
+		}
+		
 		if(!pio_get(BUT1_PIO, PIO_INPUT, BUT1_PIO_IDX_MASK)){
 			for(int i=0; i < 5; i++){
 				pio_set(LED1_PIO, LED1_PIO_IDX_MASK);      // Coloca 1 no pino LED
@@ -176,9 +186,10 @@ int main(void) {
 			}
 		}
 		else {
-				pio_set(LED1_PIO, LED1_PIO_IDX_MASK);      // Coloca 1 no pino LED
-				pio_set(LED2_PIO, LED2_PIO_IDX_MASK);      // Coloca 2 no pino LED
-				pio_set(LED3_PIO, LED3_PIO_IDX_MASK);      // Coloca 3 no pino LED
+			pio_set(LED_PIO, LED_PIO_IDX_MASK);
+			pio_set(LED1_PIO, LED1_PIO_IDX_MASK);
+			pio_set(LED2_PIO, LED2_PIO_IDX_MASK);
+			pio_set(LED3_PIO, LED3_PIO_IDX_MASK);      
 
 
 		}
