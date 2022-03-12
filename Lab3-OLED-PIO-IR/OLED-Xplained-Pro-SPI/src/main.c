@@ -104,7 +104,6 @@ void BUT3_callback(void) {
 /************************************************************************/
 
 void pisca_led(int n, int t) {
-	
 	for (int i=0;i<n;i++){
 		pio_clear(LED_PIO, LED_IDX_MASK);
 		delay_ms(t);
@@ -126,7 +125,6 @@ void atualiza_display(int delay) {
 	gfx_mono_draw_filled_rect(64, 20, 60, 8, GFX_PIXEL_CLR);
 	gfx_mono_draw_rect(64, 20, 60, 8, GFX_PIXEL_SET);
 }
-
 
 void io_init(void) {
 
@@ -233,7 +231,6 @@ int main (void) {
   
 	while(1) {
 		
-		
 		if (but1_flag) {
 			delay -= 100;
 			atualiza_display(delay);
@@ -260,7 +257,6 @@ int main (void) {
 			atualiza_display(delay);
 			but3_flag = 0;
 		}
-		
 		
 		// Entra em sleep mode
 		pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);	
