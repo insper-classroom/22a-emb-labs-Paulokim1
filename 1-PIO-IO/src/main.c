@@ -168,7 +168,7 @@ int main(void) {
 			}	
 		}
 		
-		else if(!pio_get(BUT2_PIO, PIO_INPUT, BUT2_PIO_IDX_MASK)){
+		else if(!pio_get(BUT2_PIO, PIO_INPUT, BUT2_PIO_IDX_MASK) ){
 			for(int i=0; i < 5; i++){
 				pio_set(LED2_PIO, LED2_PIO_IDX_MASK);      // Coloca 1 no pino LED
 				delay_ms(100);                        // Delay por software de 100 ms
