@@ -57,6 +57,9 @@ typedef struct  {
 volatile char flag_rtc_alarm = 0;
 volatile char flag_rtc_second = 1;
 volatile char but1_flag= 0;
+volatile char flag_led3_blink = 0;
+volatile char flag_get_current_sec = 0;
+int timer = 0;
 
 /* Leitura do valor atual do RTC */
 uint32_t current_hour, current_min, current_sec;
@@ -76,6 +79,15 @@ void pin_toggle(Pio *pio, uint32_t mask);
 /************************************************************************/
 /* Handlers                                                             */
 /************************************************************************/
+void TC0_Handler(void) {
+	/**
+	* Devemos indicar ao TC que a interrupção foi satisfeita.
+	* Isso é realizado pela leitura do status do periférico
+	**/
+	volatile uint32_t status = tc_get_status(TC0, 0);
+
+	flag_led3_blink = 1;
+}
 
 void TC1_Handler(void) {
 	/**
@@ -162,13 +174,7 @@ void LED_init(int estado) {
 };
 
 void BUT1_callback(void) {
-	if (pio_get(BUT1_PIO, PIO_INPUT, BUT1_PIO_IDX_MASK)) {
-		// PINO == 1 --> Borda de subida
-		but1_flag = 0;
-		} else {
-		but1_flag = 1;
-		// PINO == 0 --> Borda de descida
-	}
+	but1_flag = 1;
 }
 
 void button_init(int estado) {
@@ -314,6 +320,10 @@ int main(void){
 	//LED 2 piscar
 	RTT_init(1, 4, RTT_MR_ALMIEN);
 	
+	//Counter do LED 3
+	int timer = 0;
+	
+	
 	/** Configura RTC */
 	calendar rtc_initial = {2018, 3, 19, 12, 15, 45 ,1};
 	RTC_init(RTC, ID_RTC, rtc_initial, RTC_IER_ALREN);
@@ -330,15 +340,33 @@ int main(void){
 		
 		if (but1_flag){
 			/* configura alarme do RTC para daqui 20 segundos */
-			rtc_set_date_alarm(RTC, 1, current_month, 1, current_day);
-			rtc_set_time_alarm(RTC, 1, current_hour, 1, current_min, 1, current_sec + 20);
+			//rtc_set_date_alarm(RTC, 1, current_month, 1, current_day);
+			//rtc_set_time_alarm(RTC, 1, current_hour, 1, current_min, 1, current_sec + 20);
+			flag_get_current_sec = 1;
+			TC_init(TC0, ID_TC0, 0, 4);
+			tc_start(TC0, 0);
+			but1_flag = 0;
+		}
+		
+		if (flag_get_current_sec){
+			timer = current_sec;
+			flag_get_current_sec = 0;
+		}
+		
+		if (flag_led3_blink){
+			if (current_sec - timer == 5){
+				tc_stop(TC0, 0);
+				pisca_led(5,200);
+				timer = 0;
+			}
+			flag_led3_blink = 0;
 		}
 		
 		if(flag_rtc_alarm){
 			pisca_led(5, 200);
 			flag_rtc_alarm = 0;
+		}
 			
 		pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
-		}
 	}
 }
