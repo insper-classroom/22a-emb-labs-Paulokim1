@@ -55,6 +55,7 @@ typedef struct  {
 /* VAR globais                                                          */
 /************************************************************************/
 volatile char flag_rtc_alarm = 0;
+volatile char flag_rtc_second = 1;
 volatile char but1_flag= 0;
 
 /* Leitura do valor atual do RTC */
@@ -124,7 +125,7 @@ void RTC_Handler(void) {
 	
 	/* seccond tick */
 	if ((ul_status & RTC_SR_SEC) == RTC_SR_SEC) {
-		// o código para irq de segundo vem aqui
+		flag_rtc_second = 1;
 	}
 	
 	/* Time or date alarm */
@@ -191,9 +192,7 @@ void button_init(int estado) {
 	NVIC_SetPriority(BUT1_PIO_ID, 4); // Prioridade 4
 
 };
-/**
-* @Brief Inverte o valor do pino 0->1/ 1->0
-*/
+
 void pin_toggle(Pio *pio, uint32_t mask) {
   if(pio_get_output_data_status(pio, mask))
     pio_clear(pio, mask);
@@ -214,16 +213,6 @@ static float get_time_rtt(){
 	uint ul_previous_time = rtt_read_timer_value(RTT);
 }
 
-/**
-* Configura TimerCounter (TC) para gerar uma interrupcao no canal (ID_TC e TC_CHANNEL)
-* na taxa de especificada em freq.
-* O TimerCounter é meio confuso
-* o uC possui 3 TCs, cada TC possui 3 canais
-*	TC0 : ID_TC0, ID_TC1, ID_TC2
-*	TC1 : ID_TC3, ID_TC4, ID_TC5
-*	TC2 : ID_TC6, ID_TC7, ID_TC8
-*
-**/
 void TC_init(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
 	uint32_t ul_div;
 	uint32_t ul_tcclks;
@@ -243,16 +232,6 @@ void TC_init(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
 	tc_enable_interrupt(TC, TC_CHANNEL, TC_IER_CPCS);
 }
 
-/** 
- * Configura RTT
- *
- * arg0 pllPreScale  : Frequência na qual o contador irá incrementar
- * arg1 IrqNPulses   : Valor do alarme 
- * arg2 rttIRQSource : Pode ser uma 
- *     - 0: 
- *     - RTT_MR_RTTINCIEN: Interrupção por incremento (pllPreScale)
- *     - RTT_MR_ALMIEN : Interrupção por alarme
- */
 static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSource) {
 
   uint16_t pllPreScale = (int) (((float) 32768) / freqPrescale);
@@ -302,6 +281,12 @@ void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type) {
 	rtc_enable_interrupt(rtc,  irq_type);
 }
 
+void show_time_display (uint32_t current_hour, uint32_t current_min, uint32_t current_sec){
+	char time[20];
+	sprintf(time, "%02d:%02d:%02d", current_hour, current_min, current_sec);
+	gfx_mono_draw_string(time, 5,16, &sysfont);
+}
+
 /************************************************************************/
 /* Main Code	                                                        */
 /************************************************************************/
@@ -311,6 +296,8 @@ int main(void){
 
 	/* Disable the watchdog */
 	WDT->WDT_MR = WDT_MR_WDDIS;
+	
+	gfx_mono_ssd1306_init();
 
 	/* Configura Leds e botões */
 	LED_init(1);
@@ -333,11 +320,15 @@ int main(void){
 
 	while (1) {
 		
-		rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
 		rtc_get_date(RTC, &current_year, &current_month, &current_day, &current_week);
+		rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
+		
+		if (flag_rtc_second){
+			show_time_display(current_hour, current_min, current_sec);
+		}
+		
 		
 		if (but1_flag){
-			
 			/* configura alarme do RTC para daqui 20 segundos */
 			rtc_set_date_alarm(RTC, 1, current_month, 1, current_day);
 			rtc_set_time_alarm(RTC, 1, current_hour, 1, current_min, 1, current_sec + 20);
