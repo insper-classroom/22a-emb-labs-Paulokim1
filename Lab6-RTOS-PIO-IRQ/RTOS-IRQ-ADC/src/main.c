@@ -19,6 +19,9 @@
 #define TASK_ADC_STACK_SIZE (1024*10 / sizeof(portSTACK_TYPE))
 #define TASK_ADC_STACK_PRIORITY (tskIDLE_PRIORITY)
 
+#define TASK_PROC_STACK_SIZE (1024*10 / sizeof(portSTACK_TYPE))
+#define TASK_PROC_STACK_PRIORITY (tskIDLE_PRIORITY)
+
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
                                           signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
@@ -32,6 +35,7 @@ extern void xPortSysTickHandler(void);
 
 /** Queue for msg log send data */
 QueueHandle_t xQueueADC;
+QueueHandle_t xQueuePROC;
 
 typedef struct {
   uint value;
@@ -96,7 +100,7 @@ static void AFEC_pot_Callback(void) {
   adcData adc;
   adc.value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
   BaseType_t xHigherPriorityTaskWoken = pdTRUE;
-  xQueueSendFromISR(xQueueADC, &adc, &xHigherPriorityTaskWoken);
+  xQueueSendFromISR(xQueuePROC, &adc, &xHigherPriorityTaskWoken);
 }
 
 /************************************************************************/
@@ -104,22 +108,48 @@ static void AFEC_pot_Callback(void) {
 /************************************************************************/
 
 static void task_adc(void *pvParameters) {
-
-  // configura ADC e TC para controlar a leitura
-  config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
-  TC_init(TC0, ID_TC1, 1, 10);
-  tc_start(TC0, 1);
-
-  // variável para recever dados da fila
+	
   adcData adc;
 
   while (1) {
     if (xQueueReceive(xQueueADC, &(adc), 1000)) {
-      printf("ADC: %d \n", adc);
+      printf("Media movel: %d \n", adc);
     } else {
       printf("Nao chegou um novo dado em 1 segundo");
     }
   }
+}
+
+static void task_proc(void *pvParameters) {
+
+	// configura ADC e TC para controlar a leitura
+	config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
+	TC_init(TC0, ID_TC1, 1, 10);
+	tc_start(TC0, 1);
+
+	// variável para receber dados da fila
+	adcData adc;
+	
+	//Variáveis para o cálculo da média móvel
+	int soma = 0;
+	int media = 0;
+	int count = 0;
+	int N = 10;
+
+	while (1) {
+		if (xQueueReceive(xQueuePROC, &(adc), 1000)) {
+			if (count == N) {
+				media = soma/N;
+				xQueueSend(xQueueADC, &(media), 10);
+				count = 0;
+				soma = 0;
+			}
+			soma += adc.value;
+			count++;
+		} else {
+			printf("Nao chegou um novo dado em 1 segundo");
+	   }
+	}
 }
 
 /************************************************************************/
@@ -222,10 +252,19 @@ int main(void) {
   xQueueADC = xQueueCreate(100, sizeof(adcData));
   if (xQueueADC == NULL)
     printf("falha em criar a queue xQueueADC \n");
+	
+  xQueuePROC = xQueueCreate(100, sizeof(adcData));
+  if (xQueuePROC == NULL)
+	printf("falha em criar a queue xQueuePROC \n");
 
   if (xTaskCreate(task_adc, "ADC", TASK_ADC_STACK_SIZE, NULL,
                   TASK_ADC_STACK_PRIORITY, NULL) != pdPASS) {
     printf("Failed to create test ADC task\r\n");
+  }
+  
+  if (xTaskCreate(task_proc, "PROC", TASK_PROC_STACK_SIZE, NULL,
+  TASK_PROC_STACK_PRIORITY, NULL) != pdPASS) {
+	  printf("Failed to create test PROC task\r\n");
   }
 
   vTaskStartScheduler();
