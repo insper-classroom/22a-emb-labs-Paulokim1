@@ -119,12 +119,10 @@ void RTT_Handler(void) {
 
 	/* IRQ due to Alarm */
 	if ((ul_status & RTT_SR_ALMS) == RTT_SR_ALMS) {
-		RTT_init(1, 4, RTT_MR_ALMIEN);
 	}
 	
 	/* IRQ due to Time has changed */
 	if ((ul_status & RTT_SR_RTTINC) == RTT_SR_RTTINC) {
-		pin_toggle(LED2_PIO, LED2_PIO_IDX_MASK);    // BLINK Led
 	}
 
 }
@@ -137,13 +135,11 @@ void RTC_Handler(void) {
 	
 	/* seccond tick */
 	if ((ul_status & RTC_SR_SEC) == RTC_SR_SEC) {
-		flag_rtc_second = 1;
 	}
 	
 	/* Time or date alarm */
 	if ((ul_status & RTC_SR_ALARM) == RTC_SR_ALARM) {
 		// o código para irq de alame vem aqui
-		flag_rtc_alarm = 1;
 	}
 
 	rtc_clear_status(RTC, RTC_SCCR_SECCLR);
@@ -317,11 +313,6 @@ int main(void){
 	TC_init(TC0, ID_TC2, 2, 4);
 	tc_start(TC0, 2);
 	
-	//LED 2 piscar
-	RTT_init(1, 4, RTT_MR_ALMIEN);
-	
-	//Counter do LED 3
-	int timer = 0;
 	
 	
 	/** Configura RTC */
@@ -330,42 +321,6 @@ int main(void){
 
 	while (1) {
 		
-		rtc_get_date(RTC, &current_year, &current_month, &current_day, &current_week);
-		rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
-		
-		if (flag_rtc_second){
-			show_time_display(current_hour, current_min, current_sec);
-		}
-		
-		
-		if (but1_flag){
-			/* configura alarme do RTC para daqui 20 segundos */
-			//rtc_set_date_alarm(RTC, 1, current_month, 1, current_day);
-			//rtc_set_time_alarm(RTC, 1, current_hour, 1, current_min, 1, current_sec + 20);
-			flag_get_current_sec = 1;
-			TC_init(TC0, ID_TC0, 0, 4);
-			tc_start(TC0, 0);
-			but1_flag = 0;
-		}
-		
-		if (flag_get_current_sec){
-			timer = current_sec;
-			flag_get_current_sec = 0;
-		}
-		
-		if (flag_led3_blink){
-			if (current_sec - timer == 5){
-				tc_stop(TC0, 0);
-				pisca_led(5,200);
-				timer = 0;
-			}
-			flag_led3_blink = 0;
-		}
-		
-		if(flag_rtc_alarm){
-			pisca_led(5, 200);
-			flag_rtc_alarm = 0;
-		}
 			
 		pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
 	}

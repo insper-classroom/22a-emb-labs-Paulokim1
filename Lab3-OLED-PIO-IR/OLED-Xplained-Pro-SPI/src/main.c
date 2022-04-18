@@ -234,7 +234,7 @@ int main (void) {
 		if (but1_flag) {
 			delay -= 100;
 			atualiza_display(delay);
-			but1_flag = 1;
+			//but1_flag = 1;
 		}
 		
 		int count = 0;

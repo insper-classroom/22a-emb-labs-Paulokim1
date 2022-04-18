@@ -55,7 +55,7 @@ void pisca_led(int n, int t);
 /************************************************************************/
 /* handler / callbacks                                                  */
 /************************************************************************/
-void but_callBack(void){
+void but_callback(void){
 	but_flag = 1;
 }
 
@@ -97,7 +97,7 @@ void io_init(void)
                   BUT_PIO_ID,
                   BUT_IDX_MASK,
                   PIO_IT_RISE_EDGE,
-                  but_callback());
+                  but_callback);
 
   // Ativa interrupção e limpa primeira IRQ gerada na ativacao
   pio_enable_interrupt(BUT_PIO, BUT_IDX_MASK);
