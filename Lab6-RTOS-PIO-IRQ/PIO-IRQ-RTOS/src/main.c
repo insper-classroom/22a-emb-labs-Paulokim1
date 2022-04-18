@@ -166,11 +166,11 @@ static void task_but(void *pvParameters) {
       xQueueSend(xQueueLedFreq, (void *)&delayTicks, 10);
       printf("task_but: %d \n", delayTicks);
 	  
-	  if (delayTicks == 100) {
-		  delayTicks = 900;
-	  }
-	  else if (delayTicks == 2100) {
+	  if (delayTicks < 100) {
 		  delayTicks = 100;
+	  }
+	  else if (delayTicks > 2100) {
+		  delayTicks = 2100;
 	  }
     }
 	  
