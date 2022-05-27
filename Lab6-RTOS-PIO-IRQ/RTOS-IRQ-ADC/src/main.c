@@ -1,388 +1,277 @@
-/************************************************************************/
-/* INCLUDES                                                             */
-/************************************************************************/
-#include "asf.h"
-
+#include "conf_board.h"
+#include <asf.h>
 
 /************************************************************************/
-/* DEFINES                                                              */
-/************************************************************************/
-#define LED_PIO PIOC
-#define LED_PIO_ID ID_PIOC
-#define LED_PIO_IDX 8
-#define LED_IDX_MASK (1 << LED_PIO_IDX)
-
-#define LED1_PIO           PIOA
-#define LED1_PIO_ID        ID_PIOA
-#define LED1_PIO_IDX       0
-#define LED1_PIO_IDX_MASK  (1 << LED1_PIO_IDX)
-
-#define LED2_PIO           PIOC
-#define LED2_PIO_ID        ID_PIOC
-#define LED2_PIO_IDX       30
-#define LED2_PIO_IDX_MASK  (1 << LED2_PIO_IDX)
-
-#define LED3_PIO           PIOB
-#define LED3_PIO_ID        ID_PIOB
-#define LED3_PIO_IDX       2
-#define LED3_PIO_IDX_MASK  (1 << LED3_PIO_IDX)
-
-#define BUT_PIO      PIOA
-#define BUT_PIO_ID   ID_PIOA
-#define BUT_IDX		 11
-#define BUT_IDX_MASK (1 << BUT_IDX)
-
-#define BUT1_PIO          PIOD
-#define BUT1_PIO_ID       ID_PIOD
-#define BUT1_PIO_IDX      28
-#define BUT1_PIO_IDX_MASK (1u << BUT1_PIO_IDX)
-
-#define BUT2_PIO          PIOC
-#define BUT2_PIO_ID       ID_PIOC
-#define BUT2_PIO_IDX      31
-#define BUT2_PIO_IDX_MASK (1u << BUT2_PIO_IDX)
-
-#define BUT3_PIO          PIOA
-#define BUT3_PIO_ID       ID_PIOA
-#define BUT3_PIO_IDX      19
-#define BUT3_PIO_IDX_MASK (1u << BUT3_PIO_IDX)
-
-// PAD
-#define KEY_LIN_1				PIOD
-#define KEY_LIN_1_ID			ID_PIOD
-#define KEY_LIN_1_IDX			30
-#define KEY_LIN_1_IDX_MASK (1 << KEY_LIN_1_IDX)
-
-#define KEY_LIN_2				PIOA
-#define KEY_LIN_2_ID			ID_PIOA
-#define KEY_LIN_2_IDX			6
-#define KEY_LIN_2_IDX_MASK (1 << KEY_LIN_2_IDX)
-
-#define KEY_LIN_3				PIOC
-#define KEY_LIN_3_ID			ID_PIOC
-#define KEY_LIN_3_IDX			19
-#define KEY_LIN_3_IDX_MASK (1 << KEY_LIN_3_IDX)
-
-#define KEY_LIN_4				PIOA
-#define KEY_LIN_4_ID			ID_PIOA
-#define KEY_LIN_4_IDX			2
-#define KEY_LIN_4_IDX_MASK (1 << KEY_LIN_4_IDX)
-
-#define KEY_COL_1				PIOA
-#define KEY_COL_1_ID			ID_PIOA
-#define KEY_COL_1_IDX			3
-#define KEY_COL_1_IDX_MASK (1 << KEY_COL_1_IDX)
-
-#define KEY_COL_2				PIOA
-#define KEY_COL_2_ID			ID_PIOA
-#define KEY_COL_2_IDX			21
-#define KEY_COL_2_IDX_MASK (1 << KEY_COL_2_IDX)
-
-#define KEY_COL_3				PIOD
-#define KEY_COL_3_ID			ID_PIOD
-#define KEY_COL_3_IDX			27
-#define KEY_COL_3_IDX_MASK (1 << KEY_COL_3_IDX)
-
-#define KEY_COL_4				PIOD
-#define KEY_COL_4_ID			ID_PIOD
-#define KEY_COL_4_IDX			20
-#define KEY_COL_4_IDX_MASK (1 << KEY_COL_4_IDX)
-
-/************************************************************************/
-/* GLOBAL VARS                                                          */
+/* BOARD CONFIG                                                         */
 /************************************************************************/
 
-char lido = '\0';
+#define USART_COM_ID ID_USART1
+#define USART_COM USART1
 
-
-/************************************************************************/
-/* PROTOTYPES                                                           */
-/************************************************************************/
-
-void keypad_init(void);
-char le_keypad();
+#define AFEC_POT AFEC0
+#define AFEC_POT_ID ID_AFEC0
+#define AFEC_POT_CHANNEL 0 // Canal do pino PD30
 
 /************************************************************************/
-/* CALLBACKS                                                            */
+/* RTOS                                                                */
 /************************************************************************/
 
+#define TASK_ADC_STACK_SIZE (1024*10 / sizeof(portSTACK_TYPE))
+#define TASK_ADC_STACK_PRIORITY (tskIDLE_PRIORITY)
+
+#define TASK_PROC_STACK_SIZE (1024*10 / sizeof(portSTACK_TYPE))
+#define TASK_PROC_STACK_PRIORITY (tskIDLE_PRIORITY)
+
+extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
+                                          signed char *pcTaskName);
+extern void vApplicationIdleHook(void);
+extern void vApplicationTickHook(void);
+extern void vApplicationMallocFailedHook(void);
+extern void xPortSysTickHandler(void);
 
 /************************************************************************/
-/* INITS                                                                */
+/* recursos RTOS                                                        */
 /************************************************************************/
-void LED_init() {
-	pmc_enable_periph_clk(LED_PIO_ID);
-	pio_set_output(LED_PIO, LED_IDX_MASK, 0, 0, 0);
-	
-	/**
-	pmc_enable_periph_clk(LED1_PIO_ID);
-	pio_set_output(LED1_PIO, LED1_PIO_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(LED2_PIO_ID);
-	pio_set_output(LED2_PIO, LED2_PIO_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(LED3_PIO_ID);
-	pio_set_output(LED3_PIO, LED3_PIO_IDX_MASK, 1, 0, 0);
-	**/
-};
 
-void keypad_init()
-{
-	
-	pmc_enable_periph_clk(KEY_LIN_1_ID);
-	pio_set_output(KEY_LIN_1, KEY_LIN_1_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(KEY_LIN_2_ID);
-	pio_set_output(KEY_LIN_2, KEY_LIN_2_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(KEY_LIN_3_ID);
-	pio_set_output(KEY_LIN_3, KEY_LIN_3_IDX_MASK, 1, 0, 0);
-	
-	pmc_enable_periph_clk(KEY_LIN_4_ID);
-	pio_set_output(KEY_LIN_4, KEY_LIN_4_IDX_MASK, 1, 0, 0);
+/** Queue for msg log send data */
+QueueHandle_t xQueueADC;
+QueueHandle_t xQueuePROC;
 
-	
-	pmc_enable_periph_clk(KEY_COL_1_ID);
-	pio_set_input(KEY_COL_1, KEY_COL_1_IDX_MASK, PIO_PULLUP);
-	
-	pmc_enable_periph_clk(KEY_COL_2_ID);
-	pio_set_input(KEY_COL_2, KEY_COL_2_IDX_MASK, PIO_PULLUP);
-	
-	pmc_enable_periph_clk(KEY_COL_3_ID);
-	pio_set_input(KEY_COL_3, KEY_COL_3_IDX_MASK, PIO_PULLUP);
-	
-	pmc_enable_periph_clk(KEY_COL_4_ID);
-	pio_set_input(KEY_COL_4, KEY_COL_4_IDX_MASK, PIO_PULLUP);/**/
-	
+typedef struct {
+  uint value;
+} adcData;
+
+/************************************************************************/
+/* prototypes local                                                     */
+/************************************************************************/
+
+static void USART1_init(void);
+void TC_init(Tc *TC, int ID_TC, int TC_CHANNEL, int freq);
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel, afec_callback_t callback);
+static void configure_console(void);
+
+/************************************************************************/
+/* RTOS application funcs                                               */
+/************************************************************************/
+
+extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
+                                          signed char *pcTaskName) {
+  printf("stack overflow %x %s\r\n", pxTask, (portCHAR *)pcTaskName);
+  /* If the parameters have been corrupted then inspect pxCurrentTCB to
+   * identify which task has overflowed its stack.
+   */
+  for (;;) {
+  }
 }
 
-char le_keypad()
-{
-	
-	pio_clear(KEY_LIN_1, KEY_LIN_1_IDX_MASK);
-	pio_set(KEY_LIN_2, KEY_LIN_2_IDX_MASK);
-	pio_set(KEY_LIN_3, KEY_LIN_3_IDX_MASK);
-	pio_set(KEY_LIN_4, KEY_LIN_4_IDX_MASK);
+extern void vApplicationIdleHook(void) { pmc_sleep(SAM_PM_SMODE_SLEEP_WFI); }
 
-	if(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '1';
-		delay_ms(20);
-	}
+extern void vApplicationTickHook(void) {}
 
-	else if(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '2';
-		delay_ms(20);
-	}
+extern void vApplicationMallocFailedHook(void) {
+  /* Called if a call to pvPortMalloc() fails because there is insufficient
+  free memory available in the FreeRTOS heap.  pvPortMalloc() is called
+  internally by FreeRTOS API functions that create tasks, queues, software
+  timers, and semaphores.  The size of the FreeRTOS heap is set by the
+  configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h. */
 
-	else if(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '3';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = 'A';
-		delay_ms(20);
-	}
-
-
-	pio_set(KEY_LIN_1, KEY_LIN_1_IDX_MASK);
-	pio_clear(KEY_LIN_2, KEY_LIN_2_IDX_MASK);
-	pio_set(KEY_LIN_3, KEY_LIN_3_IDX_MASK);
-	pio_set(KEY_LIN_4, KEY_LIN_4_IDX_MASK);
-
-	if(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '4';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '5';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '6';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = 'B';
-		delay_ms(20);
-	}
-
-
-	pio_set(KEY_LIN_1, KEY_LIN_1_IDX_MASK);
-	pio_set(KEY_LIN_2, KEY_LIN_2_IDX_MASK);
-	pio_clear(KEY_LIN_3, KEY_LIN_3_IDX_MASK);
-	pio_set(KEY_LIN_4, KEY_LIN_4_IDX_MASK);
-
-	if(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '7';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '8';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '9';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = 'C';
-		delay_ms(20);
-	}
-
-
-	pio_set(KEY_LIN_1, KEY_LIN_1_IDX_MASK);
-	pio_set(KEY_LIN_2, KEY_LIN_2_IDX_MASK);
-	pio_set(KEY_LIN_3, KEY_LIN_3_IDX_MASK);
-	pio_clear(KEY_LIN_4, KEY_LIN_4_IDX_MASK);
-
-	if(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_1,PIO_INPUT,KEY_COL_1_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '*';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_2,PIO_INPUT,KEY_COL_2_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '0';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_3,PIO_INPUT,KEY_COL_3_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = '#';
-		delay_ms(20);
-	}
-
-	else if(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-	{
-		while(!(pio_get(KEY_COL_4,PIO_INPUT,KEY_COL_4_IDX_MASK)))
-		{
-			delay_ms(20);
-		}
-		lido = 'D';
-		delay_ms(20);
-	}
-
-	return lido;
-
+  /* Force an assert. */
+  configASSERT((volatile void *)NULL);
 }
 
-
-
 /************************************************************************/
-/* HANDLERS                                                             */
+/* handlers / callbacks                                                 */
 /************************************************************************/
 
+void TC1_Handler(void) {
+  volatile uint32_t ul_dummy;
+
+  ul_dummy = tc_get_status(TC0, 1);
+
+  /* Avoid compiler warning */
+  UNUSED(ul_dummy);
+
+  /* Selecina canal e inicializa conversão */
+  afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+  afec_start_software_conversion(AFEC_POT);
+}
+
+static void AFEC_pot_Callback(void) {
+  adcData adc;
+  adc.value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
+  BaseType_t xHigherPriorityTaskWoken = pdTRUE;
+  xQueueSendFromISR(xQueuePROC, &adc, &xHigherPriorityTaskWoken);
+}
+
 /************************************************************************/
-/* FUNCTIONS                                                             */
+/* TASKS                                                                */
 /************************************************************************/
 
-
-/************************************************************************/
-/* Main Code	                                                        */
-/************************************************************************/
-
-
-int main(void){
-	/* Initialize the SAM system */
-	sysclk_init();
-
-	/* Disable the watchdog */
-	WDT->WDT_MR = WDT_MR_WDDIS;
+static void task_adc(void *pvParameters) {
 	
+  adcData adc;
+
+  while (1) {
+    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
+      printf("Media movel: %d \n", adc);
+    } else {
+      printf("Nao chegou um novo dado em 1 segundo");
+    }
+  }
+}
+
+static void task_proc(void *pvParameters) {
+
+	// configura ADC e TC para controlar a leitura
+	config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
+	TC_init(TC0, ID_TC1, 1, 10);
+	tc_start(TC0, 1);
+
+	// variável para receber dados da fila
+	adcData adc;
 	
-
-	/* Configura Leds e botões */
-	LED_init();
-	keypad_init();
-
-
+	//Variáveis para o cálculo da média móvel
+	int soma = 0;
+	int media = 0;
+	int count = 0;
+	int N = 10;
 
 	while (1) {
-		
-		char lido = le_keypad(); //Chama a função de varredura do KeyPad 
-		printf(lido);
-		
-		
-		
+		if (xQueueReceive(xQueuePROC, &(adc), 1000)) {
+			if (count == N) {
+				media = soma/N;
+				xQueueSend(xQueueADC, &(media), 10);
+				count = 0;
+				soma = 0;
+			}
+			soma += adc.value;
+			count++;
+		} else {
+			printf("Nao chegou um novo dado em 1 segundo");
+	   }
 	}
+}
+
+/************************************************************************/
+/* funcoes                                                              */
+/************************************************************************/
+
+/**
+ * \brief Configure the console UART.
+ */
+static void configure_console(void) {
+  const usart_serial_options_t uart_serial_options = {
+      .baudrate = CONF_UART_BAUDRATE,
+      .charlength = CONF_UART_CHAR_LENGTH,
+      .paritytype = CONF_UART_PARITY,
+      .stopbits = CONF_UART_STOP_BITS,
+  };
+
+  /* Configure console UART. */
+  stdio_serial_init(CONF_UART, &uart_serial_options);
+
+  /* Specify that stdout should not be buffered. */
+  setbuf(stdout, NULL);
+}
+
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel,
+                            afec_callback_t callback) {
+  /*************************************
+   * Ativa e configura AFEC
+   *************************************/
+  /* Ativa AFEC - 0 */
+  afec_enable(afec);
+
+  /* struct de configuracao do AFEC */
+  struct afec_config afec_cfg;
+
+  /* Carrega parametros padrao */
+  afec_get_config_defaults(&afec_cfg);
+
+  /* Configura AFEC */
+  afec_init(afec, &afec_cfg);
+
+  /* Configura trigger por software */
+  afec_set_trigger(afec, AFEC_TRIG_SW);
+
+  /*** Configuracao específica do canal AFEC ***/
+  struct afec_ch_config afec_ch_cfg;
+  afec_ch_get_config_defaults(&afec_ch_cfg);
+  afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+  afec_ch_set_config(afec, afec_channel, &afec_ch_cfg);
+
+  /*
+  * Calibracao:
+  * Because the internal ADC offset is 0x200, it should cancel it and shift
+  down to 0.
+  */
+  afec_channel_set_analog_offset(afec, afec_channel, 0x200);
+
+  /***  Configura sensor de temperatura ***/
+  struct afec_temp_sensor_config afec_temp_sensor_cfg;
+
+  afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
+  afec_temp_sensor_set_config(afec, &afec_temp_sensor_cfg);
+
+  /* configura IRQ */
+  afec_set_callback(afec, afec_channel, callback, 1);
+  NVIC_SetPriority(afec_id, 4);
+  NVIC_EnableIRQ(afec_id);
+}
+
+void TC_init(Tc *TC, int ID_TC, int TC_CHANNEL, int freq) {
+  uint32_t ul_div;
+  uint32_t ul_tcclks;
+  uint32_t ul_sysclk = sysclk_get_cpu_hz();
+
+  pmc_enable_periph_clk(ID_TC);
+
+  tc_find_mck_divisor(freq, ul_sysclk, &ul_div, &ul_tcclks, ul_sysclk);
+  tc_init(TC, TC_CHANNEL, ul_tcclks | TC_CMR_CPCTRG);
+  tc_write_rc(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq);
+
+  NVIC_SetPriority((IRQn_Type)ID_TC, 4);
+  NVIC_EnableIRQ((IRQn_Type)ID_TC);
+  tc_enable_interrupt(TC, TC_CHANNEL, TC_IER_CPCS);
+}
+
+/************************************************************************/
+/* main                                                                 */
+/************************************************************************/
+
+/**
+ *  \brief FreeRTOS Real Time Kernel example entry point.
+ *
+ *  \return Unused (ANSI-C compatibility).
+ */
+int main(void) {
+  sysclk_init();
+  board_init();
+  configure_console();
+
+  xQueueADC = xQueueCreate(100, sizeof(adcData));
+  if (xQueueADC == NULL)
+    printf("falha em criar a queue xQueueADC \n");
+	
+  xQueuePROC = xQueueCreate(100, sizeof(adcData));
+  if (xQueuePROC == NULL)
+	printf("falha em criar a queue xQueuePROC \n");
+
+  if (xTaskCreate(task_adc, "ADC", TASK_ADC_STACK_SIZE, NULL,
+                  TASK_ADC_STACK_PRIORITY, NULL) != pdPASS) {
+    printf("Failed to create test ADC task\r\n");
+  }
+  
+  if (xTaskCreate(task_proc, "PROC", TASK_PROC_STACK_SIZE, NULL,
+  TASK_PROC_STACK_PRIORITY, NULL) != pdPASS) {
+	  printf("Failed to create test PROC task\r\n");
+  }
+
+  vTaskStartScheduler();
+
+  while (1) {  }
+
+  /* Will only get here if there was insufficient memory to create the idle
+   * task. */
+  return 0;
 }

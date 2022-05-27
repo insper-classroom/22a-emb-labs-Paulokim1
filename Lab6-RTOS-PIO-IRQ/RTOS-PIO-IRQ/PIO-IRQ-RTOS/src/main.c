@@ -5,33 +5,22 @@
 /* BOARD CONFIG                                                         */
 /************************************************************************/
 
-#define BUT_PIO PIOA
-#define BUT_PIO_ID ID_PIOA
-#define BUT_PIO_PIN 11
-#define BUT_PIO_PIN_MASK (1 << BUT_PIO_PIN)
-
-#define BUT1_PIO    PIOD
-#define BUT1_PIO_ID  ID_PIOD
-#define BUT1_PIO_PIN   28
-#define BUT1_PIO_PIN_MASK (1u << BUT1_PIO_PIN)
-
-
-#define LED_PIO PIOC
-#define LED_PIO_ID ID_PIOC
-#define LED_PIO_IDX 8
-#define LED_IDX_MASK (1 << LED_PIO_IDX)
-
 #define USART_COM_ID ID_USART1
 #define USART_COM USART1
+
+#define AFEC_POT AFEC0
+#define AFEC_POT_ID ID_AFEC0
+#define AFEC_POT_CHANNEL 0 // Canal do pino PD30
 
 /************************************************************************/
 /* RTOS                                                                */
 /************************************************************************/
 
-#define TASK_LED_STACK_SIZE (4096 / sizeof(portSTACK_TYPE))
-#define TASK_LED_STACK_PRIORITY (tskIDLE_PRIORITY)
-#define TASK_BUT_STACK_SIZE (4096 / sizeof(portSTACK_TYPE))
-#define TASK_BUT_STACK_PRIORITY (tskIDLE_PRIORITY)
+#define TASK_ADC_STACK_SIZE (1024*10 / sizeof(portSTACK_TYPE))
+#define TASK_ADC_STACK_PRIORITY (tskIDLE_PRIORITY)
+
+#define TASK_PROC_STACK_SIZE (1024*10 / sizeof(portSTACK_TYPE))
+#define TASK_PROC_STACK_PRIORITY (tskIDLE_PRIORITY)
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
                                           signed char *pcTaskName);
@@ -44,34 +33,27 @@ extern void xPortSysTickHandler(void);
 /* recursos RTOS                                                        */
 /************************************************************************/
 
-/** Semaforo a ser usado pela task led */
-/*
-SemaphoreHandle_t xSemaphoreBut;
-SemaphoreHandle_t xSemaphoreBut1;
-*/
-
 /** Queue for msg log send data */
-QueueHandle_t xQueueLedFreq;
-QueueHandle_t xQueueBut;
+QueueHandle_t xQueueADC;
+QueueHandle_t xQueuePROC;
+
+typedef struct {
+  uint value;
+} adcData;
 
 /************************************************************************/
 /* prototypes local                                                     */
 /************************************************************************/
 
-void but_callback(void);
-void but1_callback(void);
-static void BUT_init(void);
-void pin_toggle(Pio *pio, uint32_t mask);
 static void USART1_init(void);
-void LED_init(int estado);
+void TC_init(Tc *TC, int ID_TC, int TC_CHANNEL, int freq);
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel, afec_callback_t callback);
+static void configure_console(void);
 
 /************************************************************************/
 /* RTOS application funcs                                               */
 /************************************************************************/
 
-/**
- * \brief Called if stack overflow during execution
- */
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
                                           signed char *pcTaskName) {
   printf("stack overflow %x %s\r\n", pxTask, (portCHAR *)pcTaskName);
@@ -82,14 +64,8 @@ extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
   }
 }
 
-/**
- * \brief This function is called by FreeRTOS idle task
- */
 extern void vApplicationIdleHook(void) { pmc_sleep(SAM_PM_SMODE_SLEEP_WFI); }
 
-/**
- * \brief This function is called by FreeRTOS each tick
- */
 extern void vApplicationTickHook(void) {}
 
 extern void vApplicationMallocFailedHook(void) {
@@ -107,97 +83,73 @@ extern void vApplicationMallocFailedHook(void) {
 /* handlers / callbacks                                                 */
 /************************************************************************/
 
-void but_callback(void) {
-  uint32_t inc = -100;
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  //xSemaphoreGiveFromISR(xSemaphoreBut, &xHigherPriorityTaskWoken);
-  xQueueSendFromISR(xQueueBut, (void *)&inc, 10);
+void TC1_Handler(void) {
+  volatile uint32_t ul_dummy;
+
+  ul_dummy = tc_get_status(TC0, 1);
+
+  /* Avoid compiler warning */
+  UNUSED(ul_dummy);
+
+  /* Selecina canal e inicializa conversão */
+  afec_channel_enable(AFEC_POT, AFEC_POT_CHANNEL);
+  afec_start_software_conversion(AFEC_POT);
 }
 
-void but1_callback(void) {
-	uint32_t inc = 100;
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	//xSemaphoreGiveFromISR(xSemaphoreBut1, &xHigherPriorityTaskWoken);
-	xQueueSendFromISR(xQueueBut, (void *)&inc, 10);
+static void AFEC_pot_Callback(void) {
+  adcData adc;
+  adc.value = afec_channel_get_value(AFEC_POT, AFEC_POT_CHANNEL);
+  BaseType_t xHigherPriorityTaskWoken = pdTRUE;
+  xQueueSendFromISR(xQueuePROC, &adc, &xHigherPriorityTaskWoken);
 }
 
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
 
-static void task_led(void *pvParameters) {
+static void task_adc(void *pvParameters) {
+	
+  adcData adc;
 
-  LED_init(1);
-
-  uint32_t msg = 0;
-  uint32_t delayMs = 2000;
-
-  /* tarefas de um RTOS não devem retornar */
-  for (;;) {
-    /* verifica se chegou algum dado na queue, e espera por 0 ticks */
-    if (xQueueReceive(xQueueLedFreq, &msg, (TickType_t) 0)) {
-      /* chegou novo valor, atualiza delay ! */
-      /* aqui eu poderia verificar se msg faz sentido (se esta no range certo)
-       */
-      /* converte ms -> ticks */
-      delayMs = msg / portTICK_PERIOD_MS;
-      printf("task_led: %d \n", delayMs);
+  while (1) {
+    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
+      printf("Media movel: %d \n", adc);
+    } else {
+      printf("Nao chegou um novo dado em 1 segundo");
     }
-
-    /* pisca LED */
-    pin_toggle(LED_PIO, LED_IDX_MASK);
-
-    /* suspende por delayMs */
-    vTaskDelay(delayMs);
   }
 }
 
-static void task_but(void *pvParameters) {
+static void task_proc(void *pvParameters) {
 
-  /* iniciliza botao */
-  BUT_init();
+	// configura ADC e TC para controlar a leitura
+	config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_Callback);
+	TC_init(TC0, ID_TC1, 1, 10);
+	tc_start(TC0, 1);
 
-  uint32_t delayTicks = 2000;
-  uint32_t inc = 0;
-
-  for (;;) {
-	if (xQueueReceive(xQueueBut, &inc, (TickType_t) 0)) {
-	  delayTicks += inc;
-      xQueueSend(xQueueLedFreq, (void *)&delayTicks, 10);
-      printf("task_but: %d \n", delayTicks);
-	  
-	  if (delayTicks < 100) {
-		  delayTicks = 100;
-	  }
-	  else if (delayTicks > 2100) {
-		  delayTicks = 2100;
-	  }
-    }
-	  
-	 /*
-    / aguarda por tempo inderteminado até a liberacao do semaforo /
-    if (xSemaphoreTake(xSemaphoreBut, 1000)) {
-      delayTicks -= 100;
-      
-      xQueueSend(xQueueLedFreq, (void *)&delayTicks, 10);
-	    
-      printf("task_but: %d \n", delayTicks);
-      
-      if (delayTicks == 100) {
-        delayTicks = 900;
-      }
-    }
+	// variável para receber dados da fila
+	adcData adc;
 	
-	if (xSemaphoreTake(xSemaphoreBut1, 1000)) {
-		
-		delayTicks += 100;
-		
-		xQueueSend(xQueueLedFreq, (void *)&delayTicks, 10);
-		
-		printf("task_but: %d \n", delayTicks);
+	//Variáveis para o cálculo da média móvel
+	int soma = 0;
+	int media = 0;
+	int count = 0;
+	int N = 10;
+
+	while (1) {
+		if (xQueueReceive(xQueuePROC, &(adc), 1000)) {
+			if (count == N) {
+				media = soma/N;
+				xQueueSend(xQueueADC, &(media), 10);
+				count = 0;
+				soma = 0;
+			}
+			soma += adc.value;
+			count++;
+		} else {
+			printf("Nao chegou um novo dado em 1 segundo");
+	   }
 	}
-	*/
-  }
 }
 
 /************************************************************************/
@@ -222,54 +174,65 @@ static void configure_console(void) {
   setbuf(stdout, NULL);
 }
 
-void pin_toggle(Pio *pio, uint32_t mask) {
-  if (pio_get_output_data_status(pio, mask))
-    pio_clear(pio, mask);
-  else
-    pio_set(pio, mask);
+static void config_AFEC_pot(Afec *afec, uint32_t afec_id, uint32_t afec_channel,
+                            afec_callback_t callback) {
+  /*************************************
+   * Ativa e configura AFEC
+   *************************************/
+  /* Ativa AFEC - 0 */
+  afec_enable(afec);
+
+  /* struct de configuracao do AFEC */
+  struct afec_config afec_cfg;
+
+  /* Carrega parametros padrao */
+  afec_get_config_defaults(&afec_cfg);
+
+  /* Configura AFEC */
+  afec_init(afec, &afec_cfg);
+
+  /* Configura trigger por software */
+  afec_set_trigger(afec, AFEC_TRIG_SW);
+
+  /*** Configuracao específica do canal AFEC ***/
+  struct afec_ch_config afec_ch_cfg;
+  afec_ch_get_config_defaults(&afec_ch_cfg);
+  afec_ch_cfg.gain = AFEC_GAINVALUE_0;
+  afec_ch_set_config(afec, afec_channel, &afec_ch_cfg);
+
+  /*
+  * Calibracao:
+  * Because the internal ADC offset is 0x200, it should cancel it and shift
+  down to 0.
+  */
+  afec_channel_set_analog_offset(afec, afec_channel, 0x200);
+
+  /***  Configura sensor de temperatura ***/
+  struct afec_temp_sensor_config afec_temp_sensor_cfg;
+
+  afec_temp_sensor_get_config_defaults(&afec_temp_sensor_cfg);
+  afec_temp_sensor_set_config(afec, &afec_temp_sensor_cfg);
+
+  /* configura IRQ */
+  afec_set_callback(afec, afec_channel, callback, 1);
+  NVIC_SetPriority(afec_id, 4);
+  NVIC_EnableIRQ(afec_id);
 }
 
-void LED_init(int estado){
-	pmc_enable_periph_clk(LED_PIO_ID);
-	pio_set_output(LED_PIO, LED_IDX_MASK, estado, 0, 0);
-};
+void TC_init(Tc *TC, int ID_TC, int TC_CHANNEL, int freq) {
+  uint32_t ul_div;
+  uint32_t ul_tcclks;
+  uint32_t ul_sysclk = sysclk_get_cpu_hz();
 
+  pmc_enable_periph_clk(ID_TC);
 
-static void BUT_init(void) {
-  // Configura PIO para lidar com o pino do botão como entrada
-  // com pull-up
-  pio_configure(BUT_PIO, PIO_INPUT, BUT_PIO_PIN_MASK, PIO_PULLUP);
-  pio_configure(BUT1_PIO, PIO_INPUT, BUT1_PIO_PIN_MASK, PIO_PULLUP);
+  tc_find_mck_divisor(freq, ul_sysclk, &ul_div, &ul_tcclks, ul_sysclk);
+  tc_init(TC, TC_CHANNEL, ul_tcclks | TC_CMR_CPCTRG);
+  tc_write_rc(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq);
 
-  // Configura interrupção no pino referente ao botao e associa
-  // função de callback caso uma interrupção for gerada
-  // a função de callback é a: but_callback()
-  pio_handler_set(BUT_PIO,
-                  BUT_PIO_ID,
-                  BUT_PIO_PIN_MASK,
-                  PIO_IT_FALL_EDGE,
-                  but_callback);
-
-  pio_handler_set(BUT1_PIO,
-                  BUT1_PIO_ID,
-                  BUT1_PIO_PIN_MASK,
-                  PIO_IT_FALL_EDGE,
-                  but1_callback);
-
-  // Ativa interrupção e limpa primeira IRQ gerada na ativacao
-  pio_enable_interrupt(BUT_PIO, BUT_PIO_PIN_MASK);
-  pio_get_interrupt_status(BUT_PIO);
-  
-  pio_enable_interrupt(BUT1_PIO, BUT1_PIO_PIN_MASK);
-  pio_get_interrupt_status(BUT1_PIO);
-  
-  // Configura NVIC para receber interrupcoes do PIO do botao
-  // com prioridade 4 (quanto mais próximo de 0 maior)
-  NVIC_EnableIRQ(BUT_PIO_ID);
-  NVIC_SetPriority(BUT_PIO_ID, 4); // Prioridade 4
-  
-  NVIC_EnableIRQ(BUT1_PIO_ID);
-  NVIC_SetPriority(BUT1_PIO_ID, 4); // Prioridade 4
+  NVIC_SetPriority((IRQn_Type)ID_TC, 4);
+  NVIC_EnableIRQ((IRQn_Type)ID_TC);
+  tc_enable_interrupt(TC, TC_CHANNEL, TC_IER_CPCS);
 }
 
 /************************************************************************/
@@ -282,56 +245,31 @@ static void BUT_init(void) {
  *  \return Unused (ANSI-C compatibility).
  */
 int main(void) {
-  /* Initialize the SAM system */
   sysclk_init();
   board_init();
   configure_console();
+
+  xQueueADC = xQueueCreate(100, sizeof(adcData));
+  if (xQueueADC == NULL)
+    printf("falha em criar a queue xQueueADC \n");
 	
-  printf("Sys init ok \n");
+  xQueuePROC = xQueueCreate(100, sizeof(adcData));
+  if (xQueuePROC == NULL)
+	printf("falha em criar a queue xQueuePROC \n");
 
-  /* Attempt to create a semaphore. */
-  /*
-  xSemaphoreBut = xSemaphoreCreateBinary();
-  xSemaphoreBut1 = xSemaphoreCreateBinary();
-  if (xSemaphoreBut == NULL)
-    printf("falha em criar o semaforo \n");
-  if (xSemaphoreBut1 == NULL)
-    printf("falha em criar o semaforo \n");
-  */
+  if (xTaskCreate(task_adc, "ADC", TASK_ADC_STACK_SIZE, NULL,
+                  TASK_ADC_STACK_PRIORITY, NULL) != pdPASS) {
+    printf("Failed to create test ADC task\r\n");
+  }
   
-  /* cria queue com 32 "espacos" */
-  /* cada espaço possui o tamanho de um inteiro*/
-  xQueueLedFreq = xQueueCreate(32, sizeof(uint32_t));
-  if (xQueueLedFreq == NULL)
-    printf("falha em criar a queue \n");
-
-  xQueueBut = xQueueCreate(32, sizeof(uint32_t));
-  if (xQueueBut == NULL)
-	printf("falha em criar a queue \n");
-
-
-  /* Create task to make led blink */
-  if (xTaskCreate(task_led, "Led", TASK_LED_STACK_SIZE, NULL,
-                  TASK_LED_STACK_PRIORITY, NULL) != pdPASS) {
-    printf("Failed to create test led task\r\n");
-  } else {
-     printf("task led created \r\n");
-	  
-  }
-  /* Create task to monitor processor activity */
-  if (xTaskCreate(task_but, "BUT", TASK_BUT_STACK_SIZE, NULL,
-                  TASK_BUT_STACK_PRIORITY, NULL) != pdPASS) {
-    printf("Failed to create UartTx task\r\n");
-  } else {
-     printf("task led but \r\n");  
+  if (xTaskCreate(task_proc, "PROC", TASK_PROC_STACK_SIZE, NULL,
+  TASK_PROC_STACK_PRIORITY, NULL) != pdPASS) {
+	  printf("Failed to create test PROC task\r\n");
   }
 
-  /* Start the scheduler. */
   vTaskStartScheduler();
 
-  /* RTOS não deve chegar aqui !! */
-  while (1) {
-  }
+  while (1) {  }
 
   /* Will only get here if there was insufficient memory to create the idle
    * task. */
